@@ -269,65 +269,65 @@ class UserProfile {
 		frappe.dashboard_utils.render_chart_filters(filters, "chart-filter", ".heatmap-options");
 	}
 
-	edit_profile() {
-		let edit_profile_dialog = new frappe.ui.Dialog({
-			title: __("Edit Profile"),
-			fields: [
-				{
-					fieldtype: "Attach Image",
-					fieldname: "user_image",
-					label: "Profile Image",
-				},
-				{
-					fieldtype: "Data",
-					fieldname: "interest",
-					label: "Interests",
-				},
-				{
-					fieldtype: "Column Break",
-				},
-				{
-					fieldtype: "Data",
-					fieldname: "location",
-					label: "Location",
-				},
-				{
-					fieldtype: "Section Break",
-					fieldname: "Interest",
-				},
-				{
-					fieldtype: "Small Text",
-					fieldname: "bio",
-					label: "Bio",
-				},
-			],
-			primary_action: (values) => {
-				edit_profile_dialog.disable_primary_action();
-				frappe
-					.xcall("frappe.desk.page.user_profile.user_profile.update_profile_info", {
-						profile_info: values,
-					})
-					.then((user) => {
-						user.image = user.user_image;
-						this.user = Object.assign(values, user);
-						edit_profile_dialog.hide();
-						this.render_user_details();
-					})
-					.finally(() => {
-						edit_profile_dialog.enable_primary_action();
-					});
-			},
-			primary_action_label: __("Save"),
-		});
+	// edit_profile() {
+	// 	let edit_profile_dialog = new frappe.ui.Dialog({
+	// 		title: __("Edit Profile"),
+	// 		fields: [
+	// 			{
+	// 				fieldtype: "Attach Image",
+	// 				fieldname: "user_image",
+	// 				label: "Profile Image",
+	// 			},
+	// 			{
+	// 				fieldtype: "Data",
+	// 				fieldname: "interest",
+	// 				label: "Interests",
+	// 			},
+	// 			{
+	// 				fieldtype: "Column Break",
+	// 			},
+	// 			{
+	// 				fieldtype: "Data",
+	// 				fieldname: "location",
+	// 				label: "Location",
+	// 			},
+	// 			{
+	// 				fieldtype: "Section Break",
+	// 				fieldname: "Interest",
+	// 			},
+	// 			{
+	// 				fieldtype: "Small Text",
+	// 				fieldname: "bio",
+	// 				label: "Bio",
+	// 			},
+	// 		],
+	// 		primary_action: (values) => {
+	// 			edit_profile_dialog.disable_primary_action();
+	// 			frappe
+	// 				.xcall("frappe.desk.page.user_profile.user_profile.update_profile_info", {
+	// 					profile_info: values,
+	// 				})
+	// 				.then((user) => {
+	// 					user.image = user.user_image;
+	// 					this.user = Object.assign(values, user);
+	// 					edit_profile_dialog.hide();
+	// 					this.render_user_details();
+	// 				})
+	// 				.finally(() => {
+	// 					edit_profile_dialog.enable_primary_action();
+	// 				});
+	// 		},
+	// 		primary_action_label: __("Save"),
+	// 	});
 
-		edit_profile_dialog.set_values({
-			user_image: this.user.image,
-			location: this.user.location,
-			interest: this.user.interest,
-			bio: this.user.bio,
-		});
-		edit_profile_dialog.show();
-	}
+	// 	edit_profile_dialog.set_values({
+	// 		user_image: this.user.image,
+	// 		location: this.user.location,
+	// 		interest: this.user.interest,
+	// 		bio: this.user.bio,
+	// 	});
+	// 	edit_profile_dialog.show();
+	// }
 
 	render_user_details() {
 		this.sidebar.empty().append(

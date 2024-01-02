@@ -266,7 +266,7 @@ class Session:
 			(
 				frappe.qb.update(user_doctype)
 				.set(user_doctype.last_login, frappe.utils.now())
-				.set(user_doctype.last_ip, frappe.local.request_ip)
+				.set(user_doctype.last_ip, '0.0.0.0')
 				.set(user_doctype.last_active, frappe.utils.now())
 				.where(user_doctype.name == self.data["user"])
 			).run()
