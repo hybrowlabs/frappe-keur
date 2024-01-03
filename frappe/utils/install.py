@@ -253,12 +253,12 @@ def add_standard_navbar_items():
 			"route": "/app/user-profile",
 			"is_standard": 1,
 		},
-		{
-			"item_label": "My Settings",
-			"item_type": "Action",
-			"action": "frappe.ui.toolbar.route_to_user()",
-			"is_standard": 1,
-		},
+		# {
+		# 	"item_label": "My Settings",
+		# 	"item_type": "Action",
+		# 	"action": "frappe.ui.toolbar.route_to_user()",
+		# 	"is_standard": 1,
+		# },
 		{
 			"item_label": "Session Defaults",
 			"item_type": "Action",
