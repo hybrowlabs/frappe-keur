@@ -48,7 +48,14 @@ class User(Document):
 			self.name = self.first_name
 		else:
 			self.email = self.email.strip().lower()
-			self.name = self.email.split("@")[0]
+			import secrets
+			while True:
+				id = secrets.token_hex(16)
+				if not frappe.db.exists("User", id):
+					self.name = id
+					break
+
+
 
 	def onload(self):
 		from frappe.config import get_modules_from_all_apps
