@@ -74,7 +74,7 @@ class User(Document):
 
 		if self.name not in STANDARD_USERS:
 			self.validate_email_type(self.email)
-			self.validate_email_type(self.name)
+			# self.validate_email_type(self.name)
 		self.add_system_manager_role()
 		self.populate_role_profile_roles()
 		self.check_roles_added()
@@ -465,7 +465,7 @@ class User(Document):
 		if old_name in STANDARD_USERS:
 			throw(_("User {0} cannot be renamed").format(self.name))
 
-		self.validate_email_type(new_name)
+		# self.validate_email_type(new_name)
 
 	def validate_email_type(self, email):
 		from frappe.utils import validate_email_address
