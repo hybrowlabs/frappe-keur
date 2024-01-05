@@ -48,7 +48,7 @@ class User(Document):
 			self.name = self.first_name
 		else:
 			self.email = self.email.strip().lower()
-			self.name = self.email
+			self.name = self.email.split("@")[0]
 
 	def onload(self):
 		from frappe.config import get_modules_from_all_apps
