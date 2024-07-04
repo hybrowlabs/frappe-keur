@@ -3,6 +3,7 @@
 
 import base64
 import datetime
+import html
 import json
 import math
 import operator
@@ -2225,3 +2226,28 @@ def _get_rss_memory_usage():
 
 	rss = psutil.Process().memory_info().rss // (1024 * 1024)
 	return rss
+
+
+def clean_and_validate_name(string):
+	if not string:
+		return ""
+	string = html.unescape(string)
+	# Regex to match any HTML tags
+	html_tag_pattern = re.compile(r'<[^>]+>')
+	# Regex to match only valid characters for a name (letters and some special characters like hyphen and space)
+	valid_name_pattern = re.compile(r'^[A-Za-zÀ-ÖØ-öø-ÿ\-\'\s]+$')
+
+	# Remove any HTML tags
+	cleaned_string = re.sub(html_tag_pattern, '', string)
+
+	# Remove any invalid characters
+	cleaned_string = re.sub(r'[^A-Za-zÀ-ÖØ-öø-ÿ\-\'\s]', '', cleaned_string)
+
+	# Strip leading and trailing whitespace
+	cleaned_string = cleaned_string.strip()
+
+	# Check if the cleaned string contains only valid characters for a name
+	if valid_name_pattern.match(cleaned_string):
+		return cleaned_string
+	else:
+		return ""

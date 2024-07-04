@@ -1154,7 +1154,7 @@ frappe.views.Workspace = class Workspace {
 			],
 			primary_action_label: __("Create"),
 			primary_action: (values) => {
-				values.title = frappe.utils.escape_html(values.title);
+				values.title = frappe.sanitise_name(values.title);
 				if (!this.validate_page(values)) return;
 				d.hide();
 				this.initialize_editorjs_undo();

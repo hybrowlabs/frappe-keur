@@ -420,3 +420,32 @@ frappe.utils.get_page_view_count = function (route) {
 		path: route,
 	});
 };
+
+frappe.sanitise_name = function cleanAndValidateName(string) {
+    // Create a temporary element to decode HTML entities
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = string;
+    const unescapedString = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Regex to match any HTML tags
+    const htmlTagPattern = /<[^>]+>/g;
+    // Regex to match only valid characters for a name (letters and some special characters like hyphen and space)
+    const validNamePattern = /^[A-Za-zÀ-ÖØ-öø-ÿ\-'\s]+$/;
+
+    // Remove any HTML tags
+    let cleanedString = unescapedString.replace(htmlTagPattern, '');
+
+    // Remove any invalid characters
+    cleanedString = cleanedString.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\-'\s]/g, '');
+
+    // Strip leading and trailing whitespace
+    cleanedString = cleanedString.trim();
+
+    // Check if the cleaned string contains only valid characters for a name
+    if (validNamePattern.test(cleanedString)) {
+        return cleanedString;
+    } else {
+        return '';
+    }
+}
+

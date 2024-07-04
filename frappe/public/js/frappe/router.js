@@ -15,6 +15,20 @@ frappe.route_options = null;
 frappe.open_in_new_tab = false;
 frappe.route_hooks = {};
 
+function escape_html(txt) {
+		if (!txt) return "";
+		let escape_html_mapping = {
+			"&": "&amp;",
+			"<": "&lt;",
+			">": "&gt;",
+			'"': "&quot;",
+			"'": "&#39;",
+			"`": "&#x60;",
+			"=": "&#x3D;",
+		};
+
+		return String(txt).replace(/[&<>"'`=]/g, (char) => escape_html_mapping[char] || char);
+	}
 $(window).on("hashchange", function (e) {
 	// v1 style routing, route is in hash
 	if (window.location.hash && !frappe.router.is_app_route(e.currentTarget.pathname)) {
@@ -186,7 +200,7 @@ frappe.router = {
 				}
 			}
 			if (!frappe.workspaces[private_workspace]) {
-				frappe.msgprint(__("Workspace <b>{0}</b> does not exist", [route[1]]));
+				frappe.msgprint(__("Workspace <b>{0}</b> does not exist", [escape_html(route[1])]));
 				return ["Workspaces"];
 			}
 			route = ["Workspaces", "private", frappe.workspaces[private_workspace].title];

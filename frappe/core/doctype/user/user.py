@@ -32,7 +32,9 @@ from frappe.utils.deprecations import deprecated
 from frappe.utils.password import check_password, get_password_reset_limit
 from frappe.utils.password import update_password as _update_password
 from frappe.utils.user import get_system_managers
+from frappe.utils.data import clean_and_validate_name
 from frappe.website.utils import is_signup_disabled
+
 
 
 class User(Document):
@@ -78,6 +80,8 @@ class User(Document):
 
 		if not frappe.flags.in_test:
 			self.password_strength_test()
+
+		# self.first_name =
 
 		if self.name not in STANDARD_USERS:
 			self.validate_email_type(self.email)
@@ -165,7 +169,9 @@ class User(Document):
 		return self.name == frappe.session.user
 
 	def set_full_name(self):
-		self.full_name = " ".join(filter(None, [self.first_name, self.last_name]))
+		self.first_name = clean_and_validate_name(self.first_name)
+		self.last_name = clean_and_validate_name(self.last_name)
+		self.full_name = clean_and_validate_name(" ".join(filter(None, [self.first_name, self.last_name])))
 
 	def check_enable_disable(self):
 		# do not allow disabling administrator/guest
