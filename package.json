@@ -43,7 +43,7 @@
     "fast-deep-equal": "^2.0.1",
     "fast-glob": "^3.2.5",
     "frappe-charts": "2.0.0-rc22",
-    "frappe-datatable": "git+https://github.com/grawish/datatable.git",
+    "frappe-datatable": "git+https://github.com/grawish/datatable.git#d5b282b81cfba45011d419b9bef7a4b4766087ed",
     "frappe-gantt": "^0.6.0",
     "highlight.js": "^10.4.1",
     "html5-qrcode": "^2.0.11",
