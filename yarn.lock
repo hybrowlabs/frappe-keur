@@ -1266,9 +1266,9 @@ frappe-charts@2.0.0-rc22:
   resolved "https://registry.yarnpkg.com/frappe-charts/-/frappe-charts-2.0.0-rc22.tgz#9a5a747febdc381a1d4d7af96e89cf519dfba8c0"
   integrity sha512-N7f/8979wJCKjusOinaUYfMxB80YnfuVLrSkjpj4LtyqS0BGS6SuJxUnb7Jl4RWUFEIs7zEhideIKnyLeFZF4Q==
 
-"frappe-datatable@git+https://github.com/grawish/datatable.git":
+"frappe-datatable@git+https://github.com/grawish/datatable.git#d5b282b81cfba45011d419b9bef7a4b4766087ed":
   version "0.0.0-development"
-  resolved "git+https://github.com/grawish/datatable.git#30bfd41a122f9583c20cecd7cb61502918359844"
+  resolved "git+https://github.com/grawish/datatable.git#d5b282b81cfba45011d419b9bef7a4b4766087ed"
   dependencies:
     hyperlist "^1.0.0-beta"
     lodash "^4.17.5"
