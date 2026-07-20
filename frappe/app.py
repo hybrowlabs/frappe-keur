@@ -22,6 +22,7 @@ import frappe.utils.response
 from frappe import _
 from frappe.core.doctype.comment.comment import update_comments_in_parent_after_request
 from frappe.middlewares import StaticDataMiddleware
+from frappe.permissions import handle_does_not_exist_error
 from frappe.utils import cint, get_site_name, sanitize_html
 from frappe.utils.data import escape_html
 from frappe.utils.error import make_error_snapshot
@@ -48,7 +49,9 @@ class RequestContext:
 
 # If gc.freeze is done then importing modules before forking allows us to share the memory
 if frappe._tune_gc:
+	import babel.dates
 	import bleach
+	import num2words
 
 	import frappe.boot
 	import frappe.client
@@ -71,6 +74,11 @@ if frappe._tune_gc:
 	import frappe.website.website_generator  # web page doctypes
 
 # end: module pre-loading
+
+# better werkzeug default
+# this is necessary because frappe desk sends most requests as form data
+# and some of them can exceed werkzeug's default limit of 500kb
+Request.max_form_memory_size = None
 
 
 @local_manager.middleware
@@ -125,7 +133,7 @@ def application(request: Request):
 
 		try:
 			run_after_request_hooks(request, response)
-		except Exception as e:
+		except Exception:
 			# We can not handle exceptions safely here.
 			frappe.logger().error("Failed to run after request hook", exc_info=True)
 
@@ -155,14 +163,13 @@ def init_request(request):
 		# site does not exist
 		raise NotFound
 
+	frappe.connect(set_admin_as_user=False)
 	if frappe.local.conf.maintenance_mode:
-		frappe.connect()
 		if frappe.local.conf.allow_reads_during_maintenance:
 			setup_read_only_mode()
 		else:
 			raise frappe.SessionStopped("Session Stopped")
-	else:
-		frappe.connect(set_admin_as_user=False)
+
 	if request.path.startswith("/api/method/upload_file"):
 		from frappe.core.api.file import get_max_file_size
 
@@ -251,9 +258,7 @@ def set_cors_headers(response):
 
 	# only required for preflight requests
 	if request.method == "OPTIONS":
-		cors_headers["Access-Control-Allow-Methods"] = request.headers.get(
-			"Access-Control-Request-Method"
-		)
+		cors_headers["Access-Control-Allow-Methods"] = request.headers.get("Access-Control-Request-Method")
 
 		if allowed_headers := request.headers.get("Access-Control-Request-Headers"):
 			cors_headers["Access-Control-Allow-Headers"] = allowed_headers
@@ -285,6 +290,7 @@ def make_form_dict(request: Request):
 	frappe.local.form_dict.pop("_", None)
 
 
+@handle_does_not_exist_error
 def handle_exception(e):
 	response = None
 	http_status_code = getattr(e, "http_status_code", 500)
@@ -378,11 +384,7 @@ def handle_exception(e):
 
 def sync_database(rollback: bool) -> bool:
 	# if HTTP method would change server state, commit if necessary
-	if (
-		frappe.db
-		and (frappe.local.flags.commit or frappe.local.request.method in UNSAFE_HTTP_METHODS)
-		and frappe.db.transaction_writes
-	):
+	if frappe.db and (frappe.local.flags.commit or frappe.local.request.method in UNSAFE_HTTP_METHODS):
 		frappe.db.commit()
 		rollback = False
 	elif frappe.db:
@@ -400,9 +402,7 @@ def sync_database(rollback: bool) -> bool:
 	return rollback
 
 
-def serve(
-	port=8000, profile=False, no_reload=False, no_threading=False, site=None, sites_path="."
-):
+def serve(port=8000, profile=False, no_reload=False, no_threading=False, site=None, sites_path="."):
 	global application, _site, _sites_path
 	_site = site
 	_sites_path = sites_path
@@ -413,9 +413,7 @@ def serve(
 		application = ProfilerMiddleware(application, sort_by=("cumtime", "calls"))
 
 	if not os.environ.get("NO_STATICS"):
-		application = SharedDataMiddleware(
-			application, {"/assets": str(os.path.join(sites_path, "assets"))}
-		)
+		application = SharedDataMiddleware(application, {"/assets": str(os.path.join(sites_path, "assets"))})
 
 		application = StaticDataMiddleware(application, {"/files": str(os.path.abspath(sites_path))})
 

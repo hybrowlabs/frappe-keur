@@ -118,9 +118,7 @@ class TestDocShare(FrappeTestCase):
 		doctype = "Test DocShare with Submit"
 		create_submittable_doctype(doctype, submit_perms=0)
 
-		submittable_doc = frappe.get_doc(
-			dict(doctype=doctype, test="test docshare with submit")
-		).insert()
+		submittable_doc = frappe.get_doc(dict(doctype=doctype, test="test docshare with submit")).insert()
 
 		frappe.set_user(self.user)
 		self.assertFalse(frappe.has_permission(doctype, "submit", user=self.user))
@@ -129,15 +127,11 @@ class TestDocShare(FrappeTestCase):
 		frappe.share.add(doctype, submittable_doc.name, self.user, submit=1)
 
 		frappe.set_user(self.user)
-		self.assertTrue(
-			frappe.has_permission(doctype, "submit", doc=submittable_doc.name, user=self.user)
-		)
+		self.assertTrue(frappe.has_permission(doctype, "submit", doc=submittable_doc.name, user=self.user))
 
 		# test cascade
 		self.assertTrue(frappe.has_permission(doctype, "read", doc=submittable_doc.name, user=self.user))
-		self.assertTrue(
-			frappe.has_permission(doctype, "write", doc=submittable_doc.name, user=self.user)
-		)
+		self.assertTrue(frappe.has_permission(doctype, "write", doc=submittable_doc.name, user=self.user))
 
 		frappe.share.remove(doctype, submittable_doc.name, self.user)
 
@@ -212,3 +206,28 @@ class TestDocShare(FrappeTestCase):
 			add,
 			{"doctype": "Event", "name": self.event.name, "assign_to": ["test1@example.com"]},
 		)
+
+	def test_cannot_share_without_permission(self):
+		"""Test that users cannot share permissions they don't have."""
+		# Users don't have write permission on Communication
+		doc = frappe.new_doc("Communication")
+		doc.subject = "Hello World"
+		doc.save()
+
+		try:
+			frappe.set_user(self.user)
+
+			# Attempting to share with write permission should fail
+			self.assertRaises(
+				frappe.PermissionError,
+				frappe.share.add,
+				"Communication",
+				doc.name,
+				"test1@example.com",
+				write=1,
+			)
+
+			# Can share read
+			frappe.share.add("Communication", doc.name, "test1@example.com")
+		finally:
+			doc.delete()

@@ -32,7 +32,7 @@ Cypress.Commands.add("login", (email, password) => {
 		email = Cypress.config("testUser") || "Administrator";
 	}
 	if (!password) {
-		password = Cypress.env("adminPassword");
+		password = Cypress.env("adminPassword") || "admin";
 	}
 	// cy.session clears all localStorage on new login, so we need to retain the last route
 	const session_last_route = window.localStorage.getItem("session_last_route");
@@ -455,7 +455,7 @@ Cypress.Commands.add("clear_filters", () => {
 		url: "api/method/frappe.model.utils.user_settings.save",
 	}).as("filter-saved");
 	cy.get(".filter-section .filter-button").click({ force: true });
-	cy.wait(300);
+	cy.wait(100);
 	cy.get(".filter-popover").should("exist");
 	cy.get(".filter-popover").then((popover) => {
 		if (popover.find("input.input-with-feedback")[0].value != "") {

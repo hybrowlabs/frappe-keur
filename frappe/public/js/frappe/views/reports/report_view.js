@@ -98,7 +98,7 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 		);
 		this.$paging_area
 			.find(".level-left")
-			.append(`<span class="comparison-message text-muted">${message}</span>`);
+			.after(`<span class="comparison-message text-muted">${message}</span>`);
 	}
 
 	setup_sort_selector() {
@@ -221,19 +221,14 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 		this.setup_datatable(this.data);
 	}
 
-	render_count() {
-		if (this.list_view_settings?.disable_count) {
-			return;
-		}
-		let $list_count = this.$paging_area.find(".list-count");
-		if (!$list_count.length) {
-			$list_count = $("<span>")
+	get_count_element() {
+		let $count = this.$paging_area.find(".list-count");
+		if (!$count.length) {
+			$count = $("<span>")
 				.addClass("text-muted list-count")
 				.prependTo(this.$paging_area.find(".level-right"));
 		}
-		this.get_count_str().then((str) => {
-			$list_count.text(str);
-		});
+		return $count;
 	}
 
 	on_update(data) {
@@ -677,6 +672,36 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 		return control;
 	}
 
+	evaluate_read_only_depends_on(expression, data) {
+		let out = null;
+		if (typeof expression === "boolean") {
+			out = expression;
+		} else if (expression.substr(0, 5) == "eval:") {
+			try {
+				out = frappe.utils.eval(expression.substr(5), { doc: data });
+				if (parent && parent.istable && expression.includes("is_submittable")) {
+					out = true;
+				}
+			} catch (e) {
+				frappe.throw(__('Invalid "depends_on" expression'));
+			}
+		} else if (expression.substr(0, 3) == "fn:" && this.frm) {
+			out = this.frm.script_manager.trigger(
+				expression.substr(3),
+				this.doctype,
+				this.docname
+			);
+		} else {
+			var value = data[expression];
+			if ($.isArray(value)) {
+				out = !!value.length;
+			} else {
+				out = !!value;
+			}
+		}
+		return out;
+	}
+
 	is_editable(df, data) {
 		if (
 			df &&
@@ -690,8 +715,14 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 			!df.hidden &&
 			// not a standard field i.e., owner, modified_by, etc.
 			frappe.model.is_non_std_field(df.fieldname)
-		)
-			return true;
+		) {
+			// don't check read_only_depends_on if there's child table fields
+			return (
+				this.meta.fields.some((df) => df.fieldtype === "Table") ||
+				(df.read_only_depends_on &&
+					!this.evaluate_read_only_depends_on(df.read_only_depends_on, data))
+			);
+		}
 		return false;
 	}
 
@@ -897,7 +928,9 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 			.filter(standard_fields_filter);
 
 		// filter out docstatus field from picker
-		let std_fields = frappe.model.std_fields.filter((df) => df.fieldname !== "docstatus");
+		let std_fields = frappe.model.std_fields.filter(
+			(df) => !["docstatus", "_comments"].includes(df.fieldname)
+		);
 
 		// add status field derived from docstatus, if status is not a standard field
 		let has_status_values = false;
@@ -959,7 +992,7 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 			columns: 2,
 			options: columns[this.doctype]
 				.filter((df) => {
-					return !df.hidden && df.fieldname !== "name";
+					return !df.hidden && df.fieldname !== "name" && !df.is_virtual;
 				})
 				.map((df) => ({
 					label: __(df.label),
@@ -1194,7 +1227,6 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 				// child table field
 				const cdt_field = (f) => `${col.docfield.parent}:${f}`;
 				const name = d[cdt_field("name")];
-
 				return {
 					name: name,
 					doctype: col.docfield.parent,
@@ -1475,7 +1507,8 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 					if (this.add_totals_row) {
 						const total_data = this.get_columns_totals(this.data);
 
-						total_data["name"] = __("Totals").bold();
+						total_data["name"] = __("Total");
+						total_data.is_total_row = true;
 						rows_in_order.push(total_data);
 					}
 
@@ -1554,32 +1587,40 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 				action: () => {
 					const args = this.get_args();
 					const selected_items = this.get_checked_items(true);
-					let fields = [
-						{
-							fieldtype: "Select",
-							label: __("Select File Type"),
-							fieldname: "file_format_type",
-							options: ["Excel", "CSV"],
-							default: "Excel",
-						},
-					];
 
-					if (this.total_count > this.count_without_children || args.page_length) {
-						fields.push({
-							fieldtype: "Check",
-							fieldname: "export_all_rows",
-							label: __("Export All {0} rows?", [(this.total_count + "").bold()]),
-						});
+					let extra_fields = null;
+					if (this.list_view_settings.disable_count) {
+						extra_fields = [
+							{
+								fieldtype: "Check",
+								fieldname: "export_all_rows",
+								label: __("Export all matching rows?"),
+							},
+						];
+					} else if (
+						this.total_count > (this.count_without_children || args.page_length)
+					) {
+						extra_fields = [
+							{
+								fieldtype: "Check",
+								fieldname: "export_all_rows",
+								label: __("Export all {0} rows?", [`<b>${this.total_count}</b>`]),
+							},
+						];
 					}
 
-					const d = new frappe.ui.Dialog({
-						title: __("Export Report: {0}", [__(this.doctype)]),
-						fields: fields,
-						primary_action_label: __("Download"),
-						primary_action: (data) => {
+					const d = frappe.report_utils.get_export_dialog(
+						__(this.doctype),
+						extra_fields,
+						(data) => {
 							args.cmd = "frappe.desk.reportview.export_query";
-							args.file_format_type = data.file_format_type;
+							args.file_format_type = data.file_format;
 							args.title = this.report_name || this.doctype;
+
+							if (data.file_format == "CSV") {
+								args.csv_delimiter = data.csv_delimiter;
+								args.csv_quoting = data.csv_quoting;
+							}
 
 							if (this.add_totals_row) {
 								args.add_totals_row = 1;
@@ -1596,12 +1637,19 @@ frappe.views.ReportView = class ReportView extends frappe.views.ListView {
 								delete args.start;
 								delete args.page_length;
 							}
-
-							open_url_post(frappe.request.url, args);
+							args.export_in_background = data.export_in_background;
+							if (data.export_in_background) {
+								frappe.call({
+									method: args.cmd,
+									args,
+								});
+							} else {
+								open_url_post(frappe.request.url, args);
+							}
 
 							d.hide();
-						},
-					});
+						}
+					);
 
 					d.show();
 				},

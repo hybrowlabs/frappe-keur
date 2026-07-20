@@ -3,17 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-
-desk_properties = (
-	"search_bar",
-	"notifications",
-	"list_sidebar",
-	"bulk_actions",
-	"view_switcher",
-	"form_sidebar",
-	"timeline",
-	"dashboard",
-)
+from frappe.website.path_resolver import validate_path
 
 STANDARD_ROLES = ("Administrator", "System Manager", "Script Manager", "All", "Guest")
 
@@ -31,6 +21,7 @@ class Role(Document):
 			self.disable_role()
 		else:
 			self.set_desk_properties()
+		self.validate_homepage()
 
 	def disable_role(self):
 		if self.name in STANDARD_ROLES:
@@ -38,14 +29,14 @@ class Role(Document):
 		else:
 			self.remove_roles()
 
+	def validate_homepage(self):
+		if frappe.request and self.home_page:
+			validate_path(self.home_page)
+
 	def set_desk_properties(self):
 		# set if desk_access is not allowed, unset all desk properties
 		if self.name == "Guest":
 			self.desk_access = 0
-
-		if not self.desk_access:
-			for key in desk_properties:
-				self.set(key, 0)
 
 	def remove_roles(self):
 		frappe.db.delete("Has Role", {"role": self.name})
@@ -101,9 +92,7 @@ def get_user_info(users, field="email"):
 def get_users(role):
 	return [
 		d.parent
-		for d in frappe.get_all(
-			"Has Role", filters={"role": role, "parenttype": "User"}, fields=["parent"]
-		)
+		for d in frappe.get_all("Has Role", filters={"role": role, "parenttype": "User"}, fields=["parent"])
 	]
 
 

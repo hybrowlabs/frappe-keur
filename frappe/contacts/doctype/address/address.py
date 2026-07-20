@@ -17,9 +17,8 @@ class Address(Document):
 		self.flags.linked = False
 
 	def autoname(self):
-		if not self.address_title:
-			if self.links:
-				self.address_title = self.links[0].link_name
+		if not self.address_title and self.links:
+			self.address_title = self.links[0].link_title or self.links[0].link_name
 
 		if self.address_title:
 			self.name = cstr(self.address_title).strip() + "-" + cstr(_(self.address_type)).strip()
@@ -85,11 +84,10 @@ def get_preferred_address(doctype, name, preferred_key="is_primary_address"):
 			FROM
 				`tabAddress` addr, `tabDynamic Link` dl
 			WHERE
-				dl.parent = addr.name and dl.link_doctype = %s and
-				dl.link_name = %s and ifnull(addr.disabled, 0) = 0 and
-				%s = %s
-			"""
-			% ("%s", "%s", preferred_key, "%s"),
+				dl.parent = addr.name and dl.link_doctype = {} and
+				dl.link_name = {} and ifnull(addr.disabled, 0) = 0 and
+				{} = {}
+			""".format("%s", "%s", preferred_key, "%s"),
 			(doctype, name, 1),
 			as_dict=1,
 		)
@@ -101,9 +99,7 @@ def get_preferred_address(doctype, name, preferred_key="is_primary_address"):
 
 
 @frappe.whitelist()
-def get_default_address(
-	doctype: str, name: str | None, sort_key: str = "is_primary_address"
-) -> str | None:
+def get_default_address(doctype: str, name: str | None, sort_key: str = "is_primary_address") -> str | None:
 	"""Returns default Address name for the given doctype, name"""
 	if sort_key not in ["is_shipping_address", "is_primary_address"]:
 		return None
@@ -177,15 +173,12 @@ def get_address_list(doctype, txt, filters, limit_start, limit_page_length=20, o
 	from frappe.www.list import get_list
 
 	user = frappe.session.user
-	ignore_permissions = True
 
 	if not filters:
 		filters = []
 	filters.append(("Address", "owner", "=", user))
 
-	return get_list(
-		doctype, txt, filters, limit_start, limit_page_length, ignore_permissions=ignore_permissions
-	)
+	return get_list(doctype, txt, filters, limit_start, limit_page_length)
 
 
 def has_website_permission(doc, ptype, user, verbose=False):
@@ -254,9 +247,21 @@ def address_query(doctype, txt, searchfield, start, page_len, filters):
 		else:
 			search_condition += f" or `tabAddress`.`{field}` like %(txt)s"
 
+	# Use custom title field if set
+	if meta.show_title_field_in_link and meta.title_field:
+		title = f"`tabAddress`.{meta.title_field}"
+	else:
+		title = "`tabAddress`.city"
+
+	# Get additional search fields
+	if searchfields:
+		extra_query_fields = ",".join([f"`tabAddress`.{field}" for field in searchfields])
+	else:
+		extra_query_fields = "`tabAddress`.country"
+
 	return frappe.db.sql(
 		"""select
-			`tabAddress`.name, `tabAddress`.city, `tabAddress`.country
+			`tabAddress`.name, {title}, {extra_query_fields}
 		from
 			`tabAddress`
 		join `tabDynamic Link`
@@ -278,6 +283,8 @@ def address_query(doctype, txt, searchfield, start, page_len, filters):
 			mcond=get_match_cond(doctype),
 			search_condition=search_condition,
 			condition=condition or "",
+			title=title,
+			extra_query_fields=extra_query_fields,
 		),
 		{
 			"txt": "%" + txt + "%",

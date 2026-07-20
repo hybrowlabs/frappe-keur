@@ -25,7 +25,8 @@ class Report(Document):
 		if not self.is_standard:
 			self.is_standard = "No"
 			if (
-				frappe.session.user == "Administrator" and getattr(frappe.local.conf, "developer_mode", 0) == 1
+				frappe.session.user == "Administrator"
+				and getattr(frappe.local.conf, "developer_mode", 0) == 1
 			):
 				self.is_standard = "Yes"
 
@@ -37,8 +38,13 @@ class Report(Document):
 			if frappe.db.get_value("Report", self.name, "is_standard") == "Yes":
 				frappe.throw(_("Cannot edit a standard report. Please duplicate and create a new report"))
 
-		if self.is_standard == "Yes" and frappe.session.user != "Administrator":
-			frappe.throw(_("Only Administrator can save a standard report. Please rename and save."))
+		if self.is_standard == "Yes":
+			if frappe.session.user != "Administrator":
+				frappe.throw(_("Only Administrator can save a standard report. Please rename and save."))
+
+			# Letter Head is visible only for non-standard reports.
+			# It should not remain set when it's invisible.
+			self.letter_head = None
 
 		if self.report_type == "Report Builder":
 			self.update_report_json()
@@ -73,9 +79,7 @@ class Report(Document):
 		"""Returns true if Has Role is not set or the user is allowed."""
 		from frappe.utils import has_common
 
-		allowed = [
-			d.role for d in frappe.get_all("Has Role", fields=["role"], filters={"parent": self.name})
-		]
+		allowed = [d.role for d in frappe.get_all("Has Role", fields=["role"], filters={"parent": self.name})]
 
 		custom_roles = get_custom_allowed_roles("report", self.name)
 
@@ -97,9 +101,7 @@ class Report(Document):
 			return
 
 		if self.is_standard == "Yes" and (frappe.local.conf.get("developer_mode") or 0) == 1:
-			export_to_files(
-				record_list=[["Report", self.name]], record_module=self.module, create_init=True
-			)
+			export_to_files(record_list=[["Report", self.name]], record_module=self.module, create_init=True)
 
 			self.create_report_py()
 
@@ -134,7 +136,7 @@ class Report(Document):
 
 		# automatically set as prepared
 		execution_time = (datetime.datetime.now() - start_time).total_seconds()
-		if execution_time > threshold and not self.prepared_report:
+		if execution_time > threshold and not self.prepared_report and not frappe.conf.developer_mode:
 			frappe.enqueue(enable_prepared_report, report=self.name)
 
 		frappe.cache().hset("report_execution_time", self.name, execution_time)
@@ -269,7 +271,7 @@ class Report(Document):
 		if filters:
 			for key, value in filters.items():
 				condition, _value = "=", value
-				if isinstance(value, (list, tuple)):
+				if isinstance(value, list | tuple):
 					condition, _value = value
 				_filters.append([key, condition, _value])
 
@@ -304,7 +306,7 @@ class Report(Document):
 	def build_standard_report_columns(self, columns, group_by_args):
 		_columns = []
 
-		for (fieldname, doctype) in columns:
+		for fieldname, doctype in columns:
 			meta = frappe.get_meta(doctype)
 
 			if meta.get_field(fieldname):
@@ -328,7 +330,7 @@ class Report(Document):
 	def build_data_dict(self, result, columns):
 		data = []
 		for row in result:
-			if isinstance(row, (list, tuple)):
+			if isinstance(row, list | tuple):
 				_row = frappe._dict()
 				for i, val in enumerate(row):
 					_row[columns[i].get("fieldname")] = val
@@ -346,9 +348,17 @@ class Report(Document):
 
 		self.db_set("disabled", cint(disable))
 
+	@frappe.whitelist()
+	def enable_prepared_report(self):
+		enable_prepared_report(self.name)
+		frappe.msgprint(_("Prepared Report Enabled"))
+
 
 def is_prepared_report_disabled(report):
-	return frappe.db.get_value("Report", report, "disable_prepared_report") or 0
+	return (
+		frappe.db.get_value("Report", report, "disable_prepared_report")
+		and not frappe.db.get_value("Report", report, "prepared_report")
+	) or 0
 
 
 def get_report_module_dotted_path(module, report_name):
@@ -384,3 +394,4 @@ def get_group_by_column_label(args, meta):
 
 def enable_prepared_report(report: str):
 	frappe.db.set_value("Report", report, "prepared_report", 1)
+	frappe.db.set_value("Report", report, "disable_prepared_report", 0)

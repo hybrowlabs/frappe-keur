@@ -20,6 +20,19 @@ def get_monthly_results(
 ) -> dict:
 	"""Get monthly aggregation values for given field of doctype"""
 
+	# Only allow some valid aggregations
+	if aggregation.lower() not in {"sum", "avg", "count", "min", "max"}:
+		frappe.throw(f"Invalid aggregation type: {aggregation}")
+
+	# Check that the goal and date fields exist on the chosen doctype
+	valid_fields = frappe.get_meta(goal_doctype).get_valid_columns()
+	if goal_field not in valid_fields:
+		frappe.throw(f"Invalid goal field: {goal_field}")
+	if date_col not in valid_fields:
+		frappe.throw(f"Invalid date field: {date_col}")
+
+	frappe.has_permission(goal_doctype, throw=True)
+
 	Table = DocType(goal_doctype)
 	date_format = "%m-%Y" if frappe.db.db_type != "postgres" else "MM-YYYY"
 
@@ -50,7 +63,7 @@ def get_monthly_goal_graph_data(
 	goal_doctype_link: str,
 	goal_field: str,
 	date_field: str,
-	filter_str: str = None,
+	filter_str: str | None = None,
 	aggregation: str = "sum",
 	filters: dict | None = None,
 ) -> dict:

@@ -3,12 +3,15 @@
 import base64
 import binascii
 import json
+from contextlib import suppress
 from urllib.parse import urlencode, urlparse
 
 import frappe
 import frappe.client
 import frappe.handler
 from frappe import _
+from frappe.modules.utils import get_doctype_app_map
+from frappe.monitor import add_data_to_monitor
 from frappe.utils.data import sbool
 from frappe.utils.password import get_decrypted_password
 from frappe.utils.response import build_response
@@ -50,9 +53,11 @@ def handle():
 	if len(parts) > 3:
 		name = parts[3]
 
+	data = None
+
 	if call == "method":
 		frappe.local.form_dict.cmd = doctype
-		return frappe.handler.handle()
+		data = frappe.handler.handle()
 
 	elif call == "resource":
 		if "run_method" in frappe.local.form_dict:
@@ -150,10 +155,22 @@ def handle():
 			else:
 				raise frappe.DoesNotExistError
 
+		data = build_response("json")
+
 	else:
 		raise frappe.DoesNotExistError
 
-	return build_response("json")
+	with suppress(Exception):
+		app_name = None
+		if call == "resource" and doctype:
+			app_name = get_doctype_app_map().get(doctype)
+		elif call == "method":
+			method_path = doctype or frappe.local.form_dict.get("cmd")
+			app_name = method_path.split(".")[0]
+		if app_name:
+			add_data_to_monitor(app=app_name)
+
+	return data
 
 
 def get_request_form_data():
@@ -205,9 +222,7 @@ def validate_oauth(authorization_header):
 	req = frappe.request
 	parsed_url = urlparse(req.url)
 	access_token = {"access_token": token}
-	uri = (
-		parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path + "?" + urlencode(access_token)
-	)
+	uri = parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path + "?" + urlencode(access_token)
 	http_method = req.method
 	headers = req.headers
 	body = req.get_data()
@@ -261,8 +276,8 @@ def validate_api_key_secret(api_key, api_secret, frappe_authorization_source=Non
 	if not doc:
 		raise frappe.AuthenticationError
 	form_dict = frappe.local.form_dict
-	doc_secret = get_decrypted_password(doctype, doc, fieldname="api_secret")
-	if api_secret == doc_secret:
+	doc_secret = get_decrypted_password(doctype, doc, fieldname="api_secret", raise_exception=False)
+	if doc_secret and api_secret == doc_secret:
 		if doctype == "User":
 			user = frappe.db.get_value(doctype="User", filters={"api_key": api_key}, fieldname=["name"])
 		else:

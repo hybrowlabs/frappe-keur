@@ -14,6 +14,7 @@ from frappe.handler import execute_cmd
 from frappe.model.db_query import DatabaseQuery, get_between_date_filter
 from frappe.permissions import add_user_permission, clear_user_permissions_for_doctype
 from frappe.query_builder import Column
+from frappe.tests.test_query_builder import db_type_is, run_only_if
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils.testutils import add_custom_field, clear_custom_fields
 
@@ -178,9 +179,7 @@ class TestReportview(FrappeTestCase):
 		self.assertEqual(results2[0].child_title, "parent 2 child record 1")
 
 	def test_link_field_syntax(self):
-		todo = frappe.get_doc(
-			doctype="ToDo", description="Test ToDo", allocated_to="Administrator"
-		).insert()
+		todo = frappe.get_doc(doctype="ToDo", description="Test ToDo", allocated_to="Administrator").insert()
 		result = frappe.get_all(
 			"ToDo",
 			filters={"name": todo.name},
@@ -470,6 +469,23 @@ class TestReportview(FrappeTestCase):
 		)
 		self.assertTrue("_relevance" in data[0])
 
+		# Test that fields with keywords in strings are allowed
+		data = DatabaseQuery("DocType").execute(
+			fields=["name", "locate('select', name)"],
+			limit_start=0,
+			limit_page_length=1,
+		)
+		self.assertTrue(data)
+
+		# Test that subqueries with other DML are blocked
+		self.assertRaises(
+			frappe.DataError,
+			DatabaseQuery("DocType").execute,
+			fields=["name", "issingle", "(insert into tabUser values (1))"],
+			limit_start=0,
+			limit_page_length=1,
+		)
+
 		data = DatabaseQuery("DocType").execute(
 			fields=["name", "issingle", "date(creation) as creation"], limit_start=0, limit_page_length=1
 		)
@@ -745,7 +761,7 @@ class TestReportview(FrappeTestCase):
 	def test_set_field_tables(self):
 		# Tests _in_standard_sql_methods method in test_set_field_tables
 		# The following query will break if the above method is broken
-		data = frappe.db.get_list(
+		frappe.db.get_list(
 			"Web Form",
 			filters=[["Web Form Field", "reqd", "=", 1]],
 			fields=["count(*) as count"],
@@ -757,7 +773,7 @@ class TestReportview(FrappeTestCase):
 		try:
 			frappe.get_list("Prepared Report", ["*"])
 			frappe.get_list("Scheduled Job Type", ["*"])
-		except Exception as e:
+		except Exception:
 			print(frappe.get_traceback())
 			self.fail("get_list not working with virtual field")
 
@@ -828,7 +844,10 @@ class TestReportview(FrappeTestCase):
 			self.assertEqual(len(data[0]), 1)
 
 			data = frappe.get_list(
-				"Blog Post", filters={"published": 1}, fields=["name", "`tabTest Child`.`test_field`"], limit=1
+				"Blog Post",
+				filters={"published": 1},
+				fields=["name", "`tabTest Child`.`test_field`"],
+				limit=1,
 			)
 			self.assertFalse("test_field" in data[0])
 			self.assertTrue("name" in data[0])
@@ -862,9 +881,7 @@ class TestReportview(FrappeTestCase):
 			self.assertIsInstance(data[0]["abhi"], datetime.datetime)
 			self.assertEqual(len(data[0]), 2)
 
-			data = frappe.get_list(
-				"Blog Post", filters={"published": 1}, fields=["name", "'LABEL'"], limit=1
-			)
+			data = frappe.get_list("Blog Post", filters={"published": 1}, fields=["name", "'LABEL'"], limit=1)
 			self.assertTrue("name" in data[0])
 			self.assertTrue("LABEL" in data[0].values())
 			self.assertEqual(len(data[0]), 2)
@@ -1023,13 +1040,11 @@ class TestReportview(FrappeTestCase):
 		create_dashboard_settings(self.user)
 
 		dashboard_settings = frappe.db.sql(
-			"""
+			f"""
 				SELECT name
 				FROM `tabDashboard Settings`
-				WHERE {condition}
-			""".format(
-				condition=permission_query_conditions
-			),
+				WHERE {permission_query_conditions}
+			""",
 			as_dict=1,
 		)[0]
 
@@ -1074,6 +1089,92 @@ class TestReportview(FrappeTestCase):
 		# primary key is never nullable
 		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", ["a", None])}, run=0))
 		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", ["a", ""])}, run=0))
+		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", (""))}, run=0))
+		self.assertNotIn("ifnull", frappe.get_all("User", {"name": ("in", ())}, run=0))
+
+	def test_coalesce_with_datetime_ops(self):
+		self.assertNotIn("ifnull", frappe.get_all("User", {"last_active": (">", "2022-01-01")}, run=0))
+		self.assertNotIn("ifnull", frappe.get_all("User", {"creation": ("<", "2022-01-01")}, run=0))
+		self.assertNotIn(
+			"ifnull",
+			frappe.get_all("User", {"last_active": ("between", ("2022-01-01", "2023-01-01"))}, run=0),
+		)
+		self.assertIn("ifnull", frappe.get_all("User", {"last_active": ("<", "2022-01-01")}, run=0))
+
+	def test_ambiguous_linked_tables(self):
+		from frappe.desk.reportview import get
+
+		if not frappe.db.exists("DocType", "Related Todos"):
+			frappe.get_doc(
+				{
+					"doctype": "DocType",
+					"custom": 1,
+					"module": "Custom",
+					"name": "Related Todos",
+					"naming_rule": "Random",
+					"autoname": "hash",
+					"fields": [
+						{
+							"label": "Todo One",
+							"fieldname": "todo_one",
+							"fieldtype": "Link",
+							"options": "ToDo",
+							"reqd": 1,
+						},
+						{
+							"label": "Todo Two",
+							"fieldname": "todo_two",
+							"fieldtype": "Link",
+							"options": "ToDo",
+							"reqd": 1,
+						},
+					],
+				}
+			).insert()
+		else:
+			frappe.db.delete("Related Todos")
+
+		todo_one = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": "Todo One",
+			}
+		).insert()
+
+		todo_two = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": "Todo Two",
+			}
+		).insert()
+
+		frappe.get_doc(
+			{
+				"doctype": "Related Todos",
+				"todo_one": todo_one.name,
+				"todo_two": todo_two.name,
+			}
+		).insert()
+
+		frappe.form_dict.doctype = "Related Todos"
+		frappe.form_dict.fields = [
+			"`tabRelated Todos`.`name`",
+			"`tabRelated Todos`.`todo_one`",
+			"`tabRelated Todos`.`todo_two`",
+			# because ToDo.show_title_as_field_link = 1
+			"todo_one.description as todo_one_description",
+			"todo_two.description as todo_two_description",
+		]
+
+		# Shouldn't raise pymysql.err.OperationalError: (1066, "Not unique table/alias: 'tabToDo'")
+		data = get()
+		self.assertEqual(len(data["values"]), 1)
+
+	def test_ifnull_none(self):
+		query = frappe.get_all("DocField", {"fieldname": None}, run=0)
+		self.assertIn("''", query)
+		self.assertNotIn("\\'", query)
+		self.assertFalse(frappe.get_all("DocField", {"name": None}))
 
 
 class TestReportView(FrappeTestCase):
@@ -1081,6 +1182,7 @@ class TestReportView(FrappeTestCase):
 		frappe.set_user("Administrator")
 		return super().setUp()
 
+	@run_only_if(db_type_is.MARIADB)  # TODO: postgres name casting is messed up
 	def test_get_count(self):
 		frappe.local.request = frappe._dict()
 		frappe.local.request.method = "GET"
@@ -1094,13 +1196,13 @@ class TestReportView(FrappeTestCase):
 				"distinct": "false",
 			}
 		)
-		list_filter_response = execute_cmd("frappe.desk.reportview.get_count")
+		count = execute_cmd("frappe.desk.reportview.get_count")
 		frappe.local.form_dict = frappe._dict(
 			{"doctype": "DocType", "filters": {"show_title_field_in_link": 1}, "distinct": "true"}
 		)
 		dict_filter_response = execute_cmd("frappe.desk.reportview.get_count")
-		self.assertIsInstance(list_filter_response, int)
-		self.assertEqual(list_filter_response, dict_filter_response)
+		self.assertIsInstance(count, int)
+		self.assertEqual(count, dict_filter_response)
 
 		# test with child table filter
 		frappe.local.form_dict = frappe._dict(
@@ -1120,6 +1222,49 @@ class TestReportView(FrappeTestCase):
 			" where `tabDocField`.`fieldtype` = 'Data'"
 		)[0][0]
 		self.assertEqual(child_filter_response, current_value)
+
+		# test with limit
+		limit = 2
+		frappe.local.form_dict = frappe._dict(
+			{
+				"doctype": "DocType",
+				"filters": [["DocType", "is_virtual", "=", 1]],
+				"fields": [],
+				"distinct": "false",
+				"limit": limit,
+			}
+		)
+		count = execute_cmd("frappe.desk.reportview.get_count")
+		self.assertIsInstance(count, int)
+		self.assertLessEqual(count, limit)
+
+		# test with distinct
+		limit = 2
+		frappe.local.form_dict = frappe._dict(
+			{
+				"doctype": "DocType",
+				"fields": [],
+				"distinct": "true",
+				"limit": limit,
+			}
+		)
+		count = execute_cmd("frappe.desk.reportview.get_count")
+		self.assertIsInstance(count, int)
+		self.assertLessEqual(count, limit)
+
+		# doctype with space in name
+		limit = 2
+		frappe.local.form_dict = frappe._dict(
+			{
+				"doctype": "Role Profile",
+				"fields": [],
+				"distinct": "true",
+				"limit": limit,
+			}
+		)
+		count = execute_cmd("frappe.desk.reportview.get_count")
+		self.assertIsInstance(count, int)
+		self.assertLessEqual(count, limit)
 
 	def test_reportview_get(self):
 		user = frappe.get_doc("User", "test@example.com")
@@ -1199,6 +1344,20 @@ class TestReportView(FrappeTestCase):
 
 		response = execute_cmd("frappe.desk.reportview.get")
 		self.assertListEqual(response["keys"], ["field_label", "field_name", "_aggregate_column"])
+
+	def test_db_filter_not_set(self):
+		"""
+		Test if the 'not set' filter always translates correctly with/without qb under the hood.
+		"""
+		frappe.get_doc({"doctype": "ToDo", "description": "filter test"}).insert()
+		frappe.get_doc({"doctype": "ToDo", "description": "filter test", "reference_name": ""}).insert()
+
+		# `get_all` does not use QueryBuilder while `count` does. Both should return the same result.
+		# `not set` must consider empty strings and NULL values both.
+		self.assertEqual(
+			len(frappe.get_all("ToDo", filters={"reference_name": ["is", "not set"]})),
+			frappe.db.count("ToDo", {"reference_name": ["is", "not set"]}),
+		)
 
 
 def add_child_table_to_blog_post():

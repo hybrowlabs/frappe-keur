@@ -46,7 +46,6 @@ class Communication(Document, CommunicationEmailMixin):
 			and self.uid
 			and self.uid != -1
 		):
-
 			email_flag_queue = frappe.db.get_value(
 				"Email Flag Queue", {"communication": self.name, "is_completed": 0}
 			)
@@ -211,7 +210,7 @@ class Communication(Document, CommunicationEmailMixin):
 		emails = split_emails(emails) if isinstance(emails, str) else (emails or [])
 		if exclude_displayname:
 			return [email.lower() for email in {parse_addr(email)[1] for email in emails} if email]
-		return [email.lower() for email in set(emails) if email]
+		return [email for email in set(emails) if email]
 
 	def to_list(self, exclude_displayname=True):
 		"""Returns to list."""
@@ -342,7 +341,11 @@ class Communication(Document, CommunicationEmailMixin):
 			return
 
 		for doctype, docname in parse_email([self.recipients, self.cc, self.bcc]):
-			if not frappe.db.get_value(doctype, docname, ignore=True):
+			# Both document and doctype names should be case insensitive in email addresses.
+			doctype = frappe.db.get_value("DocType", doctype)
+			if doctype:
+				docname = frappe.db.get_value(doctype, docname, ignore=True)
+			if not (doctype and docname):
 				continue
 
 			self.add_link(doctype, docname)
@@ -407,8 +410,7 @@ def has_permission(doc, ptype, user):
 			return
 
 		if doc.reference_doctype and doc.reference_name:
-			if frappe.has_permission(doc.reference_doctype, ptype="read", doc=doc.reference_name):
-				return True
+			return frappe.has_permission(doc.reference_doctype, ptype="read", doc=doc.reference_name)
 
 
 def get_permission_query_conditions_for_communication(user):
@@ -453,6 +455,7 @@ def get_contacts(email_strings: list[str], auto_create_contact=False) -> list[st
 				contact.insert(ignore_permissions=True)
 				contact_name = contact.name
 			except Exception:
+				contact_name = None
 				contact.log_error("Unable to add contact")
 
 		if contact_name:
@@ -510,7 +513,7 @@ def parse_email(email_strings):
 				if len(document_parts) != 2:
 					continue
 
-				doctype = unquote(document_parts[0])
+				doctype = frappe.unscrub(unquote(document_parts[0]))
 				docname = unquote(document_parts[1])
 
 			if doctype and docname:
@@ -569,7 +572,10 @@ def update_first_response_time(parent, communication):
 			is_system_user(communication.sender)
 			or frappe.get_cached_value("User", frappe.session.user, "user_type") == "System User"
 		):
-			if communication.sent_or_received == "Sent":
+			if (
+				communication.sent_or_received == "Sent"
+				and communication.communication_type == "Communication"
+			):
 				first_responded_on = communication.creation
 				if parent.meta.has_field("first_responded_on"):
 					parent.db_set("first_responded_on", first_responded_on)

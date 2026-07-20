@@ -54,6 +54,11 @@ DEFAULT_FIELD_LABELS = {
 	"_assign": lambda: _("Assigned To"),
 }
 
+# When number of rows in a table exceeds this number, we disable certain features automatically.
+# This is done to avoid hammering the site with unnecessary requests that are just meant for
+# improving UX.
+LARGE_TABLE_THRESHOLD = 100_000
+
 
 def get_meta(doctype, cached=True) -> "Meta":
 	if not cached:
@@ -96,19 +101,21 @@ def load_doctype_from_file(doctype):
 class Meta(Document):
 	_metaclass = True
 	default_fields = list(default_fields)[1:]
-	special_doctypes = {
-		"DocField",
-		"DocPerm",
-		"DocType",
-		"Module Def",
-		"DocType Action",
-		"DocType Link",
-		"DocType State",
-	}
-	standard_set_once_fields = [
+	special_doctypes = frozenset(
+		{
+			"DocField",
+			"DocPerm",
+			"DocType",
+			"Module Def",
+			"DocType Action",
+			"DocType Link",
+			"DocType State",
+		}
+	)
+	standard_set_once_fields = (
 		frappe._dict(fieldname="creation", fieldtype="Datetime"),
 		frappe._dict(fieldname="owner", fieldtype="Data"),
-	]
+	)
 
 	def __init__(self, doctype):
 		if isinstance(doctype, Document):
@@ -141,12 +148,13 @@ class Meta(Document):
 		self.get_valid_columns()
 		self.set_custom_permissions()
 		self.add_custom_links_and_actions()
+		self.is_large_table = frappe.db.estimate_count(self.name) > LARGE_TABLE_THRESHOLD
 
 	def as_dict(self, no_nulls=False):
 		def serialize(doc):
 			out = {}
 			for key, value in doc.__dict__.items():
-				if isinstance(value, (list, tuple)):
+				if isinstance(value, list | tuple):
 					if not value or not isinstance(value[0], BaseDocument):
 						# non standard list object, skip
 						continue
@@ -154,7 +162,7 @@ class Meta(Document):
 					value = [serialize(d) for d in value]
 
 				if (not no_nulls and value is None) or isinstance(
-					value, (str, int, float, datetime, list, tuple)
+					value, str | int | float | datetime | list | tuple
 				):
 					out[key] = value
 
@@ -182,9 +190,7 @@ class Meta(Document):
 		return self._dynamic_link_fields
 
 	def get_select_fields(self):
-		return self.get(
-			"fields", {"fieldtype": "Select", "options": ["not in", ["[Select]", "Loading..."]]}
-		)
+		return self.get("fields", {"fieldtype": "Select", "options": ["not in", ["[Select]", "Loading..."]]})
 
 	def get_image_fields(self):
 		return self.get("fields", {"fieldtype": "Attach Image"})
@@ -540,7 +546,9 @@ class Meta(Document):
 	def get_fieldnames_with_value(self, with_field_meta=False, with_virtual_fields=False):
 		def is_value_field(docfield):
 			return not (
-				not with_virtual_fields and docfield.get("is_virtual") or docfield.fieldtype in no_value_fields
+				not with_virtual_fields
+				and docfield.get("is_virtual")
+				or docfield.fieldtype in no_value_fields
 			)
 
 		if with_field_meta:
@@ -694,15 +702,12 @@ class Meta(Document):
 					dict(label=link.group, items=[link.parent_doctype or link.link_doctype])
 				)
 
+			if not data.fieldname and link.link_fieldname:
+				data.fieldname = link.link_fieldname
+
 			if not link.is_child_table:
-				if link.link_fieldname != data.fieldname:
-					if data.fieldname:
-						data.non_standard_fieldnames[link.link_doctype] = link.link_fieldname
-					else:
-						data.fieldname = link.link_fieldname
+				data.non_standard_fieldnames[link.link_doctype] = link.link_fieldname
 			elif link.is_child_table:
-				if not data.fieldname:
-					data.fieldname = link.link_fieldname
 				data.internal_links[link.parent_doctype] = [link.table_fieldname, link.link_fieldname]
 
 	def get_row_template(self):
@@ -719,9 +724,7 @@ class Meta(Document):
 			module_name, "doctype", doctype, "templates", doctype + suffix + ".html"
 		)
 		if os.path.exists(template_path):
-			return "{module_name}/doctype/{doctype_name}/templates/{doctype_name}{suffix}.html".format(
-				module_name=module_name, doctype_name=doctype, suffix=suffix
-			)
+			return f"{module_name}/doctype/{doctype}/templates/{doctype}{suffix}.html"
 		return None
 
 	def is_nested_set(self):
@@ -776,7 +779,6 @@ def get_field_currency(df, doc=None):
 			and frappe.local.field_currency.get((doc.doctype, doc.parent), {}).get(df.fieldname)
 		)
 	):
-
 		ref_docname = doc.get("parent") or doc.name
 
 		if ":" in cstr(df.get("options")):
@@ -799,8 +801,7 @@ def get_field_currency(df, doc=None):
 			)
 
 	return frappe.local.field_currency.get((doc.doctype, doc.name), {}).get(df.fieldname) or (
-		doc.get("parent")
-		and frappe.local.field_currency.get((doc.doctype, doc.parent), {}).get(df.fieldname)
+		doc.get("parent") and frappe.local.field_currency.get((doc.doctype, doc.parent), {}).get(df.fieldname)
 	)
 
 
@@ -853,9 +854,7 @@ def trim_tables(doctype=None, dry_run=False, quiet=False):
 			if quiet:
 				continue
 			click.secho(f"Ignoring missing table for DocType: {doctype}", fg="yellow", err=True)
-			click.secho(
-				f"Consider removing record in the DocType table for {doctype}", fg="yellow", err=True
-			)
+			click.secho(f"Consider removing record in the DocType table for {doctype}", fg="yellow", err=True)
 		except Exception as e:
 			if quiet:
 				continue
