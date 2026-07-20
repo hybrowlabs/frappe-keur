@@ -103,6 +103,9 @@ hypothesis = "~=6.68.2"
 freezegun = "~=1.2.2"
 responses = "==0.23.1"
 
+[tool.bench.frappe-dependencies]
+frappe = ">=14.99.4,<15.0.0"
+
 [tool.ruff]
 line-length = 110
 target-version = "py310"
@@ -141,4 +144,3 @@ ignore = [
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
-
